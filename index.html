@@ -14,9 +14,36 @@
 
 <!-- ================= 로비 ================= -->
 <div id="screen-lobby">
+  <button id="btn-help-lobby" class="small-btn lobby-help-btn">📖 규칙</button>
+
   <header class="lobby-head">
-    <h1><span class="logo-ba">바</span><span class="logo-tu">투</span> <small>BATOO</small></h1>
+    <h1 class="logo-wrap" aria-label="바투 BATOO">
+      <svg class="logo-svg" viewBox="0 0 400 124" xmlns="http://www.w3.org/2000/svg" role="img">
+        <defs>
+          <linearGradient id="logoT" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#ffbf4d"/>
+            <stop offset="1" stop-color="#e07820"/>
+          </linearGradient>
+        </defs>
+        <!-- T: 아래로 뾰족하게 떨어지는 오렌지 스템 -->
+        <polygon points="148,8 252,8 246,44 217,44 208,112 200,121 192,112 183,44 154,44"
+                 fill="url(#logoT)" stroke="#160d04" stroke-width="7" stroke-linejoin="round"/>
+        <text x="16" y="92" font-size="74" font-weight="900" fill="#ffffff"
+              stroke="#160d04" stroke-width="9" paint-order="stroke" letter-spacing="1"
+              font-family="'Arial Black','Segoe UI',sans-serif">BA</text>
+        <text x="250" y="92" font-size="74" font-weight="900" fill="#ffffff"
+              stroke="#160d04" stroke-width="9" paint-order="stroke" letter-spacing="1"
+              font-family="'Arial Black','Segoe UI',sans-serif">OO</text>
+      </svg>
+      <span class="logo-ko">이제는 <b>바투</b> 한판!!</span>
+    </h1>
     <p class="tagline">베이스빌드 · 턴베팅 · 히든 · 스캔 — 전략 바둑 대전의 부활</p>
+    <div class="bgm-row">
+      <span class="bgm-label">🎵 로비 음악</span>
+      <button class="bgm-chip" data-bgm="zen">🪷 고요한 기원</button>
+      <button class="bgm-chip" data-bgm="arcade">🕹️ 아케이드</button>
+      <button class="bgm-chip" data-bgm="epic">⚔️ 에픽 타이틀</button>
+    </div>
   </header>
 
   <section class="lobby-section">

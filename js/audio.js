@@ -16,11 +16,16 @@
     delay: null,
     muted: false,
     lobbyPlaying: false, lobbyTimer: null, drone: [],
+    lobbyStyle: 'zen',        // 'zen' | 'arcade' | 'epic'
+    styleBus: null,           // 현재 로비 BGM 스타일 전용 출력 버스
+    step: 0, chordIdx: 0,
     hiddenNodes: null,
     _noise: null,
     mi: 8,
     voices: [],
   };
+
+  const LOBBY_STYLES = ['zen', 'arcade', 'epic'];
 
   /* A단조 5음계(A C D E G)를 3옥타브로 펼침 — 명상적 동양풍 */
   const BASE = [220.00, 261.63, 293.66, 329.63, 392.00];
@@ -75,8 +80,8 @@
     return buf;
   }
 
-  /* ---------------- 로비 BGM ---------------- */
-  function pluck(freq, when, dur, gainVal, toDelay) {
+  /* ---------------- 로비 BGM (3가지 스타일) ---------------- */
+  function pluck(freq, when, dur, gainVal, toDelay, dest) {
     const ctx = A.ctx;
     const o = ctx.createOscillator();
     o.type = 'triangle';
@@ -89,7 +94,7 @@
     g.gain.linearRampToValueAtTime(gainVal, when + 0.015);
     g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
     o.connect(lp); lp.connect(g);
-    g.connect(A.musicGain);
+    g.connect(dest || A.musicGain);
     if (toDelay) g.connect(A.delay);
     o.start(when);
     o.stop(when + dur + 0.05);
@@ -100,7 +105,17 @@
     resume();
     if (A.lobbyPlaying) return;
     A.lobbyPlaying = true;
-    // 저음 드론 2개(완전5도)
+    // 스타일 전용 버스 — 전환 시 이 버스만 페이드하면 깔끔하게 끊긴다
+    A.styleBus = A.ctx.createGain();
+    A.styleBus.gain.value = 1;
+    A.styleBus.connect(A.musicGain);
+    if (A.lobbyStyle === 'arcade') { A.step = 0; arcadeStep(); }
+    else if (A.lobbyStyle === 'epic') { A.chordIdx = 0; epicStep(); }
+    else startZen();
+  }
+
+  /* --- 스타일 1: 고요한 기원 (전통 바둑 명상풍) --- */
+  function startZen() {
     const ctx = A.ctx;
     [110, 164.81].forEach((f, i) => {
       const o = ctx.createOscillator();
@@ -109,23 +124,125 @@
       const g = ctx.createGain();
       g.gain.value = 0.0001;
       g.gain.linearRampToValueAtTime(i === 0 ? 0.09 : 0.05, ctx.currentTime + 2);
-      o.connect(g); g.connect(A.musicGain);
+      o.connect(g); g.connect(A.styleBus);
       o.start();
       A.drone.push({ o, g });
     });
-    lobbyStep();
+    zenStep();
   }
 
-  function lobbyStep() {
+  function zenStep() {
     if (!A.lobbyPlaying || !A.ctx) return;
     const t = A.ctx.currentTime + 0.05;
     // 부드러운 랜덤 워크
     A.mi = Math.max(2, Math.min(SCALE.length - 2, A.mi + (Math.floor(Math.random() * 5) - 2)));
     if (Math.random() > 0.25) {
-      pluck(SCALE[A.mi], t, 1.6, 0.16, true);
-      if (Math.random() > 0.6) pluck(SCALE[Math.max(0, A.mi - 3)], t + 0.02, 1.8, 0.09, true); // 화음
+      pluck(SCALE[A.mi], t, 1.6, 0.16, true, A.styleBus);
+      if (Math.random() > 0.6) pluck(SCALE[Math.max(0, A.mi - 3)], t + 0.02, 1.8, 0.09, true, A.styleBus); // 화음
     }
-    A.lobbyTimer = setTimeout(lobbyStep, 560 + Math.floor(Math.random() * 120));
+    A.lobbyTimer = setTimeout(zenStep, 560 + Math.floor(Math.random() * 120));
+  }
+
+  /* --- 스타일 2: 아케이드 (8비트 게임 로비풍) --- */
+  const AR_STEP_MS = (60 / 132 / 2) * 1000; // 132BPM 8분음표
+  const AR_MELODY = [ // A단조 32스텝 게임 루프
+    440, 0, 523.25, 587.33, 659.25, 0, 587.33, 523.25,
+    440, 0, 392, 440, 523.25, 0, 440, 0,
+    349.23, 0, 440, 523.25, 659.25, 0, 523.25, 440,
+    392, 440, 392, 329.63, 440, 0, 0, 0,
+  ];
+  const AR_BASS = [ // Am → F → G → E 진행
+    110, 0, 110, 110, 110, 0, 110, 0,
+    87.31, 0, 87.31, 87.31, 87.31, 0, 87.31, 0,
+    98, 0, 98, 98, 98, 0, 98, 0,
+    82.41, 0, 82.41, 82.41, 98, 0, 110, 0,
+  ];
+
+  function chip8(freq, when, dur, vol, type) {
+    const ctx = A.ctx;
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(vol, when + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    o.connect(g); g.connect(A.styleBus);
+    o.start(when); o.stop(when + dur + 0.03);
+  }
+
+  function hat8(when, vol) {
+    const ctx = A.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer(0.04);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 6500;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, when);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
+    src.connect(hp); hp.connect(g); g.connect(A.styleBus);
+    src.start(when); src.stop(when + 0.06);
+  }
+
+  function arcadeStep() {
+    if (!A.lobbyPlaying || !A.ctx || !A.styleBus) return;
+    const t = A.ctx.currentTime + 0.03;
+    const s = A.step % 32;
+    if (AR_MELODY[s]) chip8(AR_MELODY[s], t, 0.19, 0.085, 'square');
+    if (AR_BASS[s]) chip8(AR_BASS[s], t, 0.2, 0.14, 'triangle');
+    if (s % 2 === 0) hat8(t, s % 8 === 4 ? 0.05 : 0.026);
+    A.step++;
+    A.lobbyTimer = setTimeout(arcadeStep, AR_STEP_MS);
+  }
+
+  /* --- 스타일 3: 에픽 타이틀 (웅장한 게임 오프닝풍) --- */
+  const EP_CHORDS = [ // Am → F → G → Am(고음)
+    [220, 261.63, 329.63, 440],
+    [174.61, 220, 261.63, 349.23],
+    [196, 246.94, 293.66, 392],
+    [220, 261.63, 329.63, 523.25],
+  ];
+  const EP_LEN = 2.6;
+
+  function epicStep() {
+    if (!A.lobbyPlaying || !A.ctx || !A.styleBus) return;
+    const ctx = A.ctx;
+    const t = ctx.currentTime + 0.05;
+    const chord = EP_CHORDS[A.chordIdx % EP_CHORDS.length];
+    // 디튠 소투스 패드 (스웰 인/아웃)
+    chord.forEach((f) => {
+      [0.996, 1.004].forEach((dt) => {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = f * dt;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass'; lp.frequency.value = 850;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.linearRampToValueAtTime(0.032, t + 0.8);
+        g.gain.setValueAtTime(0.032, t + EP_LEN - 0.6);
+        g.gain.linearRampToValueAtTime(0.0001, t + EP_LEN + 0.1);
+        o.connect(lp); lp.connect(g); g.connect(A.styleBus);
+        o.start(t); o.stop(t + EP_LEN + 0.2);
+      });
+    });
+    // 상행 아르페지오
+    for (let k = 0; k < 6; k++) {
+      const f = chord[k % chord.length] * (k >= chord.length ? 2 : 1);
+      pluck(f, t + 0.15 + k * 0.38, 1.1, 0.1, true, A.styleBus);
+    }
+    // 마디 시작 저음 붐 (팀파니 느낌)
+    const b = ctx.createOscillator();
+    b.type = 'sine';
+    b.frequency.setValueAtTime(chord[0] / 2, t);
+    b.frequency.exponentialRampToValueAtTime(chord[0] / 4, t + 0.5);
+    const bg = ctx.createGain();
+    bg.gain.setValueAtTime(0.16, t);
+    bg.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    b.connect(bg); bg.connect(A.styleBus);
+    b.start(t); b.stop(t + 1);
+    A.chordIdx++;
+    A.lobbyTimer = setTimeout(epicStep, EP_LEN * 1000);
   }
 
   function stopLobbyBGM() {
@@ -142,6 +259,16 @@
       } catch (e) {}
     });
     A.drone = [];
+    // 이미 스케줄된 패드/멜로디 꼬리까지 버스째로 페이드아웃
+    const bus = A.styleBus;
+    if (bus) {
+      try {
+        bus.gain.setValueAtTime(bus.gain.value, now);
+        bus.gain.linearRampToValueAtTime(0.0001, now + 0.5);
+        setTimeout(() => { try { bus.disconnect(); } catch (e) {} }, 800);
+      } catch (e) {}
+      A.styleBus = null;
+    }
   }
 
   /* ---------------- 착수음(바둑돌 딸깍) ---------------- */
@@ -345,6 +472,13 @@
   const Audio = {
     lobby() { startLobbyBGM(); },
     stopLobby() { stopLobbyBGM(); },
+    setLobbyStyle(id) {
+      if (LOBBY_STYLES.indexOf(id) < 0) return;
+      A.lobbyStyle = id;
+      try { localStorage.setItem('batoo-bgm', id); } catch (e) {}
+      if (A.lobbyPlaying) { stopLobbyBGM(); startLobbyBGM(); } // 재생 중이면 즉시 전환
+    },
+    getLobbyStyle() { return A.lobbyStyle; },
     gameStart() {
       stopLobbyBGM();
       gong();
@@ -363,7 +497,7 @@
     },
     result(win) { chime(win); },
     isMuted() { return A.muted; },
-    _state() { return { ctx: A.ctx && A.ctx.state, lobby: A.lobbyPlaying, muted: A.muted, hidden: !!A.hiddenNodes }; },
+    _state() { return { ctx: A.ctx && A.ctx.state, lobby: A.lobbyPlaying, style: A.lobbyStyle, muted: A.muted, hidden: !!A.hiddenNodes }; },
     setMuted(m) {
       A.muted = !!m;
       if (A.master && A.ctx) {
@@ -388,6 +522,10 @@
   /* ---------------- 초기화(첫 제스처에서 오디오 활성) ---------------- */
   function setup() {
     try { A.muted = localStorage.getItem('batoo-muted') === '1'; } catch (e) {}
+    try {
+      const st = localStorage.getItem('batoo-bgm');
+      if (st && LOBBY_STYLES.indexOf(st) >= 0) A.lobbyStyle = st;
+    } catch (e) {}
     loadVoices();
     try {
       if (global.speechSynthesis) global.speechSynthesis.onvoiceschanged = loadVoices;

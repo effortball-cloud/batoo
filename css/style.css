@@ -6,12 +6,12 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #101a26;
-  --bg2: #182636;
-  --panel: #1e2f42;
-  --panel-edge: #2c4258;
-  --text: #e8eef4;
-  --dim: #9db0c2;
+  --bg: #1b1008;
+  --bg2: #33200f;
+  --panel: #2e1d0e;
+  --panel-edge: #5a3f1e;
+  --text: #f3e9d7;
+  --dim: #c2a678;
   --orange: #e07820;
   --orange-hi: #f5943c;
   --blue: #2578c8;
@@ -23,7 +23,15 @@
 
 html, body { height: 100%; }
 body {
-  background: radial-gradient(1200px 800px at 50% -100px, var(--bg2), var(--bg));
+  /* 원작 사이트풍 — 짙은 원목(바둑판) 질감: 널빤지 이음새 + 나뭇결 + 따뜻한 조명 */
+  background:
+    radial-gradient(1100px 650px at 50% -120px, rgba(255, 186, 92, 0.13), transparent 65%),
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.22) 0 2px, transparent 2px 148px),
+    repeating-linear-gradient(0deg,
+      rgba(255,220,160,0.022) 0 2px, transparent 2px 5px,
+      rgba(0,0,0,0.05) 5px 6px, transparent 6px 11px),
+    linear-gradient(180deg, #3d2712 0%, #2b1a0b 45%, #1b1008 100%);
+  background-attachment: fixed;
   color: var(--text);
   font-family: 'Segoe UI', 'Malgun Gothic', '맑은 고딕', sans-serif;
   min-height: 100vh;
@@ -33,20 +41,49 @@ body {
 
 /* ---------------- 로비 ---------------- */
 #screen-lobby {
+  position: relative;
   max-width: 860px;
   margin: 0 auto;
   padding: 36px 20px 60px;
 }
 .lobby-head { text-align: center; margin-bottom: 30px; }
-.lobby-head h1 {
-  font-size: 56px;
-  letter-spacing: 6px;
-  text-shadow: 0 3px 12px rgba(0,0,0,0.6);
+.lobby-help-btn {
+  position: absolute; top: 18px; right: 20px; z-index: 5;
+  font-size: 14px; font-weight: 700; padding: 9px 16px;
+  border-color: var(--orange);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.35);
 }
-.logo-ba { color: var(--orange-hi); }
-.logo-tu { color: var(--blue-hi); }
-.lobby-head small { font-size: 20px; color: var(--dim); letter-spacing: 10px; }
-.tagline { color: var(--dim); margin-top: 8px; }
+.lobby-help-btn:hover { background: var(--orange); color: #fff; }
+.logo-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.logo-svg {
+  width: min(380px, 76vw); display: block;
+  filter: drop-shadow(0 8px 18px rgba(0,0,0,0.55));
+}
+.logo-ko {
+  font-size: 17px; color: var(--text); font-weight: 600;
+  letter-spacing: 2px; text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+}
+.logo-ko b { color: var(--orange-hi); font-size: 21px; }
+.tagline { color: var(--dim); margin-top: 10px; }
+
+/* 로비 BGM 선택 칩 */
+.bgm-row {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; margin-top: 16px; flex-wrap: wrap;
+}
+.bgm-label { font-size: 12.5px; color: var(--dim); margin-right: 2px; }
+.bgm-chip {
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--panel-edge); border-radius: 20px;
+  padding: 7px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, transform .1s;
+}
+.bgm-chip:hover { transform: translateY(-1px); border-color: var(--dim); }
+.bgm-chip.selected {
+  border-color: var(--orange);
+  color: var(--orange-hi);
+  box-shadow: 0 0 0 2px rgba(224,120,32,0.3), 0 3px 10px rgba(0,0,0,0.35);
+}
 
 .lobby-section {
   background: rgba(255,255,255,0.04);
@@ -86,7 +123,7 @@ body {
 .input-row label { width: 90px; color: var(--dim); font-size: 14px; }
 .input-row input {
   flex: 1; max-width: 260px;
-  background: #0d1622; color: var(--text);
+  background: #1c1108; color: var(--text);
   border: 1px solid var(--panel-edge); border-radius: 8px;
   padding: 10px 12px; font-size: 15px;
 }
@@ -164,7 +201,7 @@ body {
 .big-btn:active { transform: scale(0.99); }
 .big-btn:disabled { filter: grayscale(0.7) brightness(0.7); cursor: not-allowed; }
 
-.lobby-foot { text-align: center; color: #5f7186; font-size: 12px; margin-top: 26px; }
+.lobby-foot { text-align: center; color: #8a7250; font-size: 12px; margin-top: 26px; }
 
 /* ---------------- 게임 화면 ---------------- */
 #screen-game {
@@ -288,7 +325,7 @@ body {
   align-items: center;
 }
 .toast {
-  background: rgba(18,28,40,0.95);
+  background: rgba(34,22,11,0.96);
   border: 1px solid var(--panel-edge);
   border-left: 4px solid var(--dim);
   color: var(--text);
@@ -306,7 +343,7 @@ body {
 /* ---------------- 오버레이 ---------------- */
 .overlay {
   position: fixed; inset: 0; z-index: 200;
-  background: rgba(6,12,20,0.86);
+  background: rgba(16,9,3,0.87);
   backdrop-filter: blur(4px);
   display: none;
   align-items: center; justify-content: center;

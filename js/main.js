@@ -114,6 +114,22 @@
     $('#btn-create-public').onclick = createPublicRoom;
     $('#btn-refresh-public').onclick = () => { if (App.lobby) renderRooms([...App.lobby.rooms.values()].map((r) => r.info)); };
 
+    // 로비 규칙 버튼
+    $('#btn-help-lobby').onclick = () => showOverlay('#ov-help');
+
+    // 로비 BGM 스타일 칩
+    const syncBgmChips = () => {
+      $$('.bgm-chip').forEach((c) => c.classList.toggle('selected', c.dataset.bgm === BatooAudio.getLobbyStyle()));
+    };
+    $$('.bgm-chip').forEach((chip) => {
+      chip.onclick = () => {
+        BatooAudio.setLobbyStyle(chip.dataset.bgm);
+        syncBgmChips();
+        if (!BatooAudio.isMuted()) BatooAudio.lobby(); // 클릭 자체가 제스처 → 바로 미리듣기
+      };
+    });
+    syncBgmChips();
+
     // 맵 카드
     const mapList = $('#map-list');
     mapList.innerHTML = '';
