@@ -169,12 +169,33 @@
     App.byoyomi = byoSec > 0 ? { sec: byoSec, periods: 3 } : null;
   }
 
+  /* 히든 준비 상태 해제 (음악 정지 + 상대에게 통지) */
+  function cancelHiddenArm() {
+    if (App.clickMode !== 'hidden') return;
+    App.clickMode = 'move';
+    BatooAudio.hiddenCancel();
+    if (isOnline() && App.net) App.net.send({ t: 'hiddenCancel' });
+  }
+
   /* 공통 온라인 핸들러 배선 (호스트/게스트/공개방 공용) */
   function wireNet() {
     App.net = new NetSession();
     App.net
       .on('error', (m) => { toast(m, 'bad', 5000); showLobby(); })
-      .on('close', () => { toast('상대와의 연결이 끊어졌습니다.', 'bad', 6000); })
+      .on('close', () => {
+        // 대국 중 상대 이탈 → 자동 승리 처리
+        if (App.game && App.stage !== 'over' && App.stage !== 'lobby') {
+          const theirColor = App.playerColor[App.myPlayer === 1 ? 2 : 1];
+          App.game.resign(theirColor);
+          App.stage = 'over';
+          stopClock();
+          BatooAudio.hiddenCancel();
+          toast('상대의 접속이 끊어졌습니다.', 'warn', 5000);
+          showResult(null, theirColor, 'left');
+        } else {
+          toast('상대와의 연결이 끊어졌습니다.', 'bad', 6000);
+        }
+      })
       .on('message', onNetMessage);
   }
 
@@ -657,10 +678,10 @@
       refreshAll();
       return;
     }
-    // 착수음 (일반 착수, 그리고 내가 둔 히든은 딸깍 / 상대의 히든은 은밀한 저음)
+    // 착수음 (일반 착수는 딸깍 / 히든 착수는 긴장 음악 종료 + 해소 타격)
     if (r.type === 'move') BatooAudio.stone();
     else if (r.type === 'hidden') {
-      if (fromRemote) BatooAudio.opponentHidden();
+      if (fromRemote) BatooAudio.hiddenPlaced();
       else BatooAudio.stone();
     }
 
@@ -802,8 +823,9 @@
     } else {
       box.innerHTML = '';
       const winner = other(loserColor);
-      const how = reason === 'timeout' ? '시간승' : '불계승';
-      const why = reason === 'timeout' ? '초읽기 소진(시간패)' : '기권';
+      const how = reason === 'timeout' ? '시간승' : reason === 'left' ? '승리' : '불계승';
+      const why = reason === 'timeout' ? '초읽기 소진(시간패)'
+        : reason === 'left' ? '접속 종료 (기권 처리)' : '기권';
       $('#result-winner').textContent =
         `🏆 ${nameOfColor(winner)} (${winner === BLACK ? '흑' : '백'}) ${how}! — ${nameOfColor(loserColor)} ${why}`;
     }
@@ -877,6 +899,13 @@
         break;
       case 'hidden':
         doHidden(App.game.turn, { x: msg.x, y: msg.y }, true);
+        break;
+      case 'hiddenArm':
+        BatooAudio.hiddenArm(); // "히든" 멘트 + 긴장 음악 (착수 시 종료)
+        toast('⚠ 상대가 히든을 사용합니다!', 'warn', 4500);
+        break;
+      case 'hiddenCancel':
+        BatooAudio.hiddenCancel();
         break;
       case 'scan':
         doScan(App.game.turn, { x: msg.x, y: msg.y }, true);
@@ -1056,8 +1085,13 @@
     $$('.btn-hidden').forEach((b) => {
       b.onclick = () => {
         if (!canAct()) return;
-        if (App.clickMode === 'hidden') { App.clickMode = 'move'; BatooAudio.hiddenCancel(); refreshAll(); return; }
-        const arm = () => { App.clickMode = 'hidden'; BatooAudio.hiddenArm(); refreshAll(); };
+        if (App.clickMode === 'hidden') { cancelHiddenArm(); refreshAll(); return; }
+        const arm = () => {
+          App.clickMode = 'hidden';
+          BatooAudio.hiddenArm();
+          if (isOnline()) App.net.send({ t: 'hiddenArm' }); // 상대도 즉시 인지
+          refreshAll();
+        };
         if (App.mode === 'hotseat') {
           confirmDialog('히든 착수: 착수 후에는 화면에 표시되지 않습니다. 상대가 화면을 보고 있지 않은지 확인하세요!', (yes) => { if (yes) arm(); });
         } else arm();
@@ -1067,7 +1101,7 @@
       b.onclick = () => {
         if (!canAct()) return;
         if (App.clickMode === 'scan') { App.clickMode = 'move'; refreshAll(); return; }
-        if (App.clickMode === 'hidden') BatooAudio.hiddenCancel(); // 히든 대기 중 스캔으로 전환
+        cancelHiddenArm(); // 히든 대기 중 스캔으로 전환
         confirmDialog('스캔을 사용하면 성공/실패와 관계없이 상대에게 2점을 줍니다. 사용할까요?', (yes) => {
           if (yes) { App.clickMode = 'scan'; BatooAudio.scanArm(); refreshAll(); }
         });
@@ -1076,14 +1110,14 @@
     $('#btn-pass').onclick = () => {
       if (!canAct()) return;
       confirmDialog('패스하시겠습니까? 양측이 연속 패스하면 계가로 넘어갑니다.', (yes) => {
-        if (yes) doPass(App.game.turn, false);
+        if (yes) { cancelHiddenArm(); doPass(App.game.turn, false); }
       });
     };
     $('#btn-resign').onclick = () => {
       if (App.stage !== 'play' && App.stage !== 'scoring') return;
       const c = isOnline() ? myColor() : App.game.turn;
       confirmDialog(`${nameOfColor(c)} — 정말 기권하시겠습니까?`, (yes) => {
-        if (yes) doResign(c, false);
+        if (yes) { cancelHiddenArm(); doResign(c, false); }
       });
     };
     $('#btn-confirm').onclick = () => {
@@ -1094,6 +1128,13 @@
     $('#btn-help').onclick = () => showOverlay('#ov-help');
     $('#btn-help-close').onclick = hideOverlays;
     $('#btn-leave').onclick = () => {
+      // 온라인 대국 중 나가기 = 기권(패배) 처리 → 상대는 자동 승리
+      if (isOnline() && App.game && App.stage !== 'over' && App.stage !== 'lobby') {
+        confirmDialog('대국 중에 나가면 기권(패배) 처리되고 상대가 승리합니다. 정말 나가시겠습니까?', (yes) => {
+          if (yes) { cancelHiddenArm(); doResign(myColor(), false); }
+        });
+        return;
+      }
       confirmDialog('게임을 나가고 로비로 돌아갈까요?', (yes) => { if (yes) showLobby(); });
     };
     $('#btn-rematch').onclick = requestRematch;

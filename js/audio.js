@@ -19,7 +19,7 @@
     lobbyStyle: 'zen',        // 'zen' | 'arcade' | 'epic'
     styleBus: null,           // 현재 로비 BGM 스타일 전용 출력 버스
     step: 0, chordIdx: 0,
-    hiddenNodes: null,
+    hiddenSeq: null,          // 히든 긴장 음악 시퀀서 상태
     _noise: null,
     mi: 8,
     voices: [],
@@ -324,47 +324,94 @@
     src.start(when); src.stop(when + 0.2);
   }
 
-  /* ---------------- 히든 긴장 드론 ---------------- */
+  /* ---------------- 히든 긴장 음악 ----------------
+   * 그리그 「페르귄트 — 산왕의 궁전에서」(1876, 퍼블릭 도메인) 주제를
+   * 저음 스타카토로 합성. 원곡처럼 반복될수록 점점 빨라지고 커진다.
+   * 히든 착수 순간 종료 + 해소 타격.
+   */
+  const MK_THEME = [ // B단조 주제 32스텝 (0 = 쉼표)
+    123.47, 138.59, 146.83, 164.81, 185.00, 146.83, 185.00, 0,
+    174.61, 138.59, 174.61, 0, 164.81, 130.81, 164.81, 0,
+    123.47, 138.59, 146.83, 164.81, 185.00, 146.83, 185.00, 246.94,
+    220.00, 185.00, 146.83, 185.00, 220.00, 0, 0, 0,
+  ];
+
+  function mkNote(freq, when, dur, vol, bus) {
+    const ctx = A.ctx;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = freq;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 750;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(vol, when + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    o.connect(lp); lp.connect(g); g.connect(bus);
+    o.start(when); o.stop(when + dur + 0.03);
+  }
+
+  function mkTimpani(when, bus) {
+    const ctx = A.ctx;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(82, when);
+    o.frequency.exponentialRampToValueAtTime(50, when + 0.35);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.22, when);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + 0.5);
+    o.connect(g); g.connect(bus);
+    o.start(when); o.stop(when + 0.55);
+  }
+
   function hiddenArm() {
     if (!ensure()) return;
     resume();
-    if (A.hiddenNodes) return;
-    const ctx = A.ctx, when = ctx.currentTime;
-    const o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 55;
-    const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 55.6; // 맥놀이
-    const o3 = ctx.createOscillator(); o3.type = 'sine';
-    o3.frequency.setValueAtTime(110, when);
-    o3.frequency.linearRampToValueAtTime(196, when + 8); // 서서히 고조되는 긴장
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(300, when);
-    lp.frequency.linearRampToValueAtTime(700, when + 8);
-    // 트레몰로
-    const trem = ctx.createGain(); trem.gain.value = 0.82;
-    const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 5.2;
-    const lfoG = ctx.createGain(); lfoG.gain.value = 0.16;
-    lfo.connect(lfoG); lfoG.connect(trem.gain);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, when);
-    g.gain.exponentialRampToValueAtTime(0.5, when + 1.2); // 서서히 부풀어오름
-    o1.connect(lp); o2.connect(lp); o3.connect(lp);
-    lp.connect(trem); trem.connect(g); g.connect(A.sfxGain);
-    o1.start(); o2.start(); o3.start(); lfo.start();
-    boom(70, 0.55); // 시작 타격
-    A.hiddenNodes = { nodes: [o1, o2, o3, lfo], g };
+    if (A.hiddenSeq) return;
+    const bus = A.ctx.createGain();
+    bus.gain.value = 1;
+    bus.connect(A.sfxGain);
+    A.hiddenSeq = { idx: 0, interval: 0.30, vol: 0.10, bus, timer: null };
+    mkTimpani(A.ctx.currentTime + 0.02, bus);
+    mkStep();
+  }
+
+  function mkStep() {
+    const s = A.hiddenSeq;
+    if (!s || !A.ctx) return;
+    const t = A.ctx.currentTime + 0.02;
+    const f = MK_THEME[s.idx % MK_THEME.length];
+    if (f) {
+      const dur = Math.max(0.1, s.interval * 0.85);
+      mkNote(f, t, dur, s.vol, s.bus);
+      mkNote(f * 2, t, dur, s.vol * 0.35, s.bus); // 옥타브 더블링(웅장함)
+    }
+    s.idx++;
+    if (s.idx % MK_THEME.length === 0) {
+      // 한 바퀴마다 아첼레란도 + 크레셴도 (원곡 스타일)
+      s.interval = Math.max(0.15, s.interval * 0.86);
+      s.vol = Math.min(0.17, s.vol * 1.18);
+      mkTimpani(t, s.bus);
+    }
+    s.timer = setTimeout(mkStep, s.interval * 1000);
   }
 
   function hiddenStop(resolved) {
-    if (!A.hiddenNodes || !A.ctx) return;
-    const now = A.ctx.currentTime, h = A.hiddenNodes;
-    try {
-      h.g.gain.cancelScheduledValues(now);
-      h.g.gain.setValueAtTime(h.g.gain.value, now);
-      h.g.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-      h.nodes.forEach((o) => { try { o.stop(now + 0.4); } catch (e) {} });
-    } catch (e) {}
-    A.hiddenNodes = null;
-    if (resolved) boom(48, 0.9); // 히든 착수 확정 타격
+    const s = A.hiddenSeq;
+    if (s) {
+      if (s.timer) clearTimeout(s.timer);
+      if (A.ctx) {
+        const now = A.ctx.currentTime;
+        try {
+          s.bus.gain.setValueAtTime(s.bus.gain.value, now);
+          s.bus.gain.linearRampToValueAtTime(0.0001, now + 0.3);
+        } catch (e) {}
+        const bus = s.bus;
+        setTimeout(() => { try { bus.disconnect(); } catch (e) {} }, 600);
+      }
+      A.hiddenSeq = null;
+    }
+    if (resolved && A.ctx) boom(48, 0.9); // 히든 착수 확정 타격
   }
 
   /* ---------------- 스캔(소나) ---------------- */
@@ -485,7 +532,11 @@
       say('Game start', { lang: 'en-US', rate: 0.95, pitch: 1.05, delay: 260 });
     },
     stone() { stone(); },
-    hiddenArm() { hiddenArm(); },
+    hiddenArm() {
+      const fresh = !A.hiddenSeq;
+      hiddenArm();
+      if (fresh) say('히든', { lang: 'ko-KR', rate: 1.05, pitch: 0.9, delay: 150 });
+    },
     hiddenPlaced() { hiddenStop(true); },
     hiddenCancel() { hiddenStop(false); },
     opponentHidden() { if (ensure()) { resume(); boom(90, 0.4); } },
@@ -497,7 +548,7 @@
     },
     result(win) { chime(win); },
     isMuted() { return A.muted; },
-    _state() { return { ctx: A.ctx && A.ctx.state, lobby: A.lobbyPlaying, style: A.lobbyStyle, muted: A.muted, hidden: !!A.hiddenNodes }; },
+    _state() { return { ctx: A.ctx && A.ctx.state, lobby: A.lobbyPlaying, style: A.lobbyStyle, muted: A.muted, hidden: !!A.hiddenSeq }; },
     setMuted(m) {
       A.muted = !!m;
       if (A.master && A.ctx) {

@@ -349,6 +349,25 @@ body {
   align-items: center; justify-content: center;
 }
 .overlay.show { display: flex; }
+
+/* 사이드 도킹 오버레이 — 보드를 가리지 않고 옆에 떠 있음 (턴베팅용) */
+.overlay.side {
+  background: transparent;
+  backdrop-filter: none;
+  pointer-events: none;
+  justify-content: flex-end;
+}
+.overlay.side .ov-box {
+  pointer-events: auto;
+  margin-right: 22px;
+  width: min(330px, 92vw);
+  border-color: var(--orange);
+  box-shadow: 0 14px 44px rgba(0,0,0,0.65), 0 0 0 2px rgba(224,120,32,0.28);
+}
+@media (max-width: 900px) {
+  .overlay.side { justify-content: center; align-items: flex-end; }
+  .overlay.side .ov-box { margin: 0 0 16px 0; }
+}
 .ov-box {
   background: var(--panel);
   border: 2px solid var(--panel-edge);
