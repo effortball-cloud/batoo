@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>바투 BATOO — 전략 바둑 대전</title>
+<link rel="stylesheet" href="css/style.css" />
+<!-- 온라인 멀티플레이용 PeerJS (없어도 같은 기기 2인 플레이는 동작) -->
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<!-- 공개 로비(방 목록)용 MQTT — 없어도 코드방·2인 플레이는 동작 -->
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+</head>
+<body>
+
+<!-- ================= 로비 ================= -->
+<div id="screen-lobby">
+  <header class="lobby-head">
+    <h1><span class="logo-ba">바</span><span class="logo-tu">투</span> <small>BATOO</small></h1>
+    <p class="tagline">베이스빌드 · 턴베팅 · 히든 · 스캔 — 전략 바둑 대전의 부활</p>
+  </header>
+
+  <section class="lobby-section">
+    <h2>게임 모드</h2>
+    <div class="mode-row">
+      <div class="mode-card selected" data-mode="hotseat">
+        <div class="mode-icon">👥</div>
+        <div class="mode-name">같은 기기에서 2인</div>
+        <div class="mode-desc">1P/2P가 번갈아 조작 (비밀 단계는 화면 가림)</div>
+      </div>
+      <div class="mode-card" data-mode="public">
+        <div class="mode-icon">🌐</div>
+        <div class="mode-name">온라인 — 공개방</div>
+        <div class="mode-desc">열린 방을 목록에서 보고 코드 없이 바로 참가</div>
+      </div>
+      <div class="mode-card" data-mode="host">
+        <div class="mode-icon">📡</div>
+        <div class="mode-name">온라인 — 코드방 만들기</div>
+        <div class="mode-desc">비공개 방 코드를 만들어 친구에게 전달</div>
+      </div>
+      <div class="mode-card" data-mode="guest">
+        <div class="mode-icon">🔑</div>
+        <div class="mode-name">온라인 — 코드로 참가</div>
+        <div class="mode-desc">친구에게 받은 방 코드로 접속</div>
+      </div>
+    </div>
+    <p id="online-warn" style="display:none" class="warn-note">
+      ⚠ PeerJS 라이브러리를 불러오지 못해 온라인 모드를 사용할 수 없습니다. 인터넷 연결을 확인하세요.
+    </p>
+    <div id="join-row" class="input-row" style="display:none">
+      <label>방 코드</label>
+      <input id="join-code" type="text" maxlength="8" placeholder="예: A3K7Q" autocomplete="off" />
+    </div>
+
+    <!-- 공개방 로비 -->
+    <div id="online-public" style="display:none">
+      <div class="lobby-bar">
+        <span id="lobby-status" class="lobby-status">로비에 연결하는 중…</span>
+        <button id="btn-create-public" class="mini-btn primary">＋ 공개방 만들기</button>
+        <button id="btn-refresh-public" class="mini-btn" title="목록 새로고침">↻</button>
+      </div>
+      <div id="room-list" class="room-list">
+        <div class="room-empty">로비에 연결하는 중…</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lobby-section" id="map-section">
+    <h2>맵 선택</h2>
+    <div id="map-list" class="map-row"></div>
+  </section>
+
+  <section class="lobby-section" id="byo-section">
+    <h2>초읽기 (시간제)</h2>
+    <div class="mode-row">
+      <div class="byo-card mode-card selected" data-sec="0">
+        <div class="mode-name">없음</div>
+        <div class="mode-desc">시간 제한 없이 편하게</div>
+      </div>
+      <div class="byo-card mode-card" data-sec="25">
+        <div class="mode-name">25초 × 3회</div>
+        <div class="mode-desc">월드바투리그 공식 규격. 초읽기 소진 시 −2점, 전부 소진 시 시간패</div>
+      </div>
+      <div class="byo-card mode-card" data-sec="15">
+        <div class="mode-name">15초 × 3회</div>
+        <div class="mode-desc">스피드전</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lobby-section">
+    <h2>플레이어</h2>
+    <div class="input-row">
+      <label id="name-p1-label">1P 이름</label>
+      <input id="name-p1" type="text" maxlength="12" placeholder="플레이어 1" />
+    </div>
+    <div class="input-row" id="name-p2-row">
+      <label>2P 이름</label>
+      <input id="name-p2" type="text" maxlength="12" placeholder="플레이어 2" />
+    </div>
+  </section>
+
+  <button id="btn-start" class="big-btn">게임 시작</button>
+
+  <footer class="lobby-foot">
+    2009년 서비스 종료된 바투(Batoo)의 팬 리메이크 · 바둑 룰 기반 + 베이스빌드/턴베팅/히든/스캔
+  </footer>
+</div>
+
+<!-- ================= 게임 ================= -->
+<div id="screen-game" class="hidden">
+  <header class="game-head">
+    <span id="phase-chip" class="chip">베이스빌드</span>
+    <span id="status-msg">-</span>
+    <span class="head-btns">
+      <button id="btn-help" class="small-btn">규칙</button>
+      <button id="btn-leave" class="small-btn">나가기</button>
+    </span>
+  </header>
+
+  <div class="game-body">
+    <!-- 흑 패널 -->
+    <aside id="panel-black" class="player-panel">
+      <div class="p-stone black"></div>
+      <div class="p-name">플레이어 1</div>
+      <div class="p-clock">00:00</div>
+      <div class="p-score">0</div>
+      <div class="p-detail"></div>
+      <div class="p-btns">
+        <button class="btn-hidden"><b>H</b> 히든 <span class="cnt">1</span></button>
+        <button class="btn-scan"><b>S</b> 스캔 <span class="cnt">1</span></button>
+      </div>
+    </aside>
+
+    <!-- 보드 -->
+    <main class="board-wrap">
+      <canvas id="board"></canvas>
+    </main>
+
+    <!-- 백 패널 -->
+    <aside id="panel-white" class="player-panel">
+      <div class="p-stone white"></div>
+      <div class="p-name">플레이어 2</div>
+      <div class="p-clock">00:00</div>
+      <div class="p-score">0</div>
+      <div class="p-detail"></div>
+      <div class="p-btns">
+        <button class="btn-hidden"><b>H</b> 히든 <span class="cnt">1</span></button>
+        <button class="btn-scan"><b>S</b> 스캔 <span class="cnt">1</span></button>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="game-foot">
+    <button id="btn-confirm" class="foot-btn primary">베이스 확정 (0/3)</button>
+    <button id="btn-pass" class="foot-btn" style="display:none">패스</button>
+    <button id="btn-resume" class="foot-btn" style="display:none">대국 재개</button>
+    <button id="btn-resign" class="foot-btn danger">기권</button>
+  </footer>
+</div>
+
+<div id="toasts"></div>
+
+<!-- ================= 오버레이 ================= -->
+<div id="ov-handoff" class="overlay">
+  <div class="ov-box">
+    <h2 id="handoff-title">핸드오프</h2>
+    <p id="handoff-desc">설명</p>
+    <button id="btn-handoff-ok" class="big-btn">준비 완료 — 시작</button>
+  </div>
+</div>
+
+<div id="ov-bet" class="overlay">
+  <div class="ov-box">
+    <h2 id="bet-title">턴베팅</h2>
+    <p class="ov-note">더 높게 베팅한 쪽이 <b>흑 + 선공</b>이 되고, 베팅한 점수만큼 상대(후공)에게 줍니다.<br>
+    동률이면 재베팅, 또 동률이면 선공을 무작위로 정합니다(흑백 유지).</p>
+    <div class="bet-slider-row">
+      <input id="bet-range" type="range" min="0" max="25" step="1" value="5" />
+      <div class="bet-big"><span id="bet-value">5</span>점</div>
+    </div>
+    <button id="btn-bet-ok" class="big-btn">베팅 확정</button>
+  </div>
+</div>
+
+<div id="ov-wait" class="overlay">
+  <div class="ov-box">
+    <h2>온라인 대기</h2>
+    <p id="wait-msg">기다리는 중…</p>
+    <div id="room-code-row" style="display:none">
+      <div class="room-code" id="room-code">-----</div>
+      <button id="btn-copy-code" class="small-btn">코드 복사</button>
+      <p class="ov-note">이 코드를 친구에게 알려주세요. 친구는 같은 페이지에서<br>「온라인 — 참가하기」로 코드를 입력하면 됩니다.</p>
+    </div>
+    <button id="btn-wait-cancel" class="small-btn">취소</button>
+  </div>
+</div>
+
+<div id="ov-result" class="overlay">
+  <div class="ov-box wide">
+    <h2 id="result-winner">결과</h2>
+    <div id="result-table"></div>
+    <div class="ov-btn-row">
+      <button id="btn-rematch" class="big-btn">다시하기</button>
+      <button id="btn-to-lobby" class="small-btn">로비로</button>
+    </div>
+  </div>
+</div>
+
+<div id="ov-confirm" class="overlay">
+  <div class="ov-box">
+    <p id="confirm-msg">확인?</p>
+    <div class="ov-btn-row">
+      <button id="btn-confirm-yes" class="big-btn">확인</button>
+      <button id="btn-confirm-no" class="small-btn">취소</button>
+    </div>
+  </div>
+</div>
+
+<div id="ov-help" class="overlay">
+  <div class="ov-box wide help-box">
+    <h2>바투 규칙 요약</h2>
+    <ul>
+      <li><b>기본</b> — 바둑과 동일: 활로가 없는 돌은 따냄. 자살수 금지, 패 규칙 적용. 돌 1개 = 1점.</li>
+      <li><b>±화점</b> — <span class="pt-plus">+</span>에 돌을 두면 +5점, <span class="pt-minus">−</span>는 −5점. <b>처음 돌을 놓는 순간 1회만</b> 적용되고 화점은 사라집니다. 남아 있는 −점은 집으로 계산되지 않습니다.</li>
+      <li><b>베이스빌드</b> — 시작 전 각자 몰래 돌 3개 배치 후 동시 공개. 같은 자리에 겹치면 둘 다 제거되고 그 자리는 −점. 베이스 돌(무늬)은 5점짜리 — 잡으면 5점, 살아 있으면 5점.</li>
+      <li><b>턴베팅</b> — 베이스 공개 후 덤을 비밀 베팅. 높은 쪽이 흑+선공, 베팅값만큼 후공에게 점수를 줍니다. 동률 2번이면 랜덤 선공(흑백 유지).</li>
+      <li><b>히든(H)</b> — 게임당 1회, 보이지 않는 착수. 상대는 사용 사실만 알 수 있습니다. 잡거나 잡히면 공개. 상대가 그 자리를 클릭하면 공개되고 상대는 다른 곳에 둘 수 있습니다.</li>
+      <li><b>스캔(S)</b> — 게임당 1회, 한 지점을 확인. 성공/실패와 무관하게 상대에게 2점. 찾은 히든은 잠깐만 보이니 위치를 기억하세요! 스캔은 턴을 소비하지 않습니다.</li>
+      <li><b>따냄</b> — 잡힌 돌은 잡힌 쪽의 점수(돌 1점, 베이스 5점)가 사라지는 것으로 반영됩니다.</li>
+      <li><b>초읽기</b> — (옵션) 매 수마다 초읽기. 1회 소진할 때마다 −2점, 전부 소진하면 시간패.</li>
+      <li><b>종국</b> — 양측 연속 패스 → 사석 지정 → 계가. <b>동점이면 후공 승</b>.</li>
+      <li><b>점수</b> — 돌 + 베이스×5 + 집 + (+점×5) − (−점×5) + 턴베팅 + 스캔보너스 − 초읽기벌점.</li>
+    </ul>
+    <button id="btn-help-close" class="big-btn">닫기</button>
+  </div>
+</div>
+
+<button id="btn-sound" title="소리 끄기">🔊</button>
+
+<script src="js/maps.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/net.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
